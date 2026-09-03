@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>无人机360度自旋 - 方向感训练</title>
+<style>
+*{box-sizing:border-box;-webkit-user-select:none;user-select:none;touch-action:none;}
+html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;background:#1a1a2e;color:#eee;}
+#app{width:100%;height:100%;max-width:480px;margin:0 auto;display:flex;flex-direction:column;position:relative;background:linear-gradient(180deg,#16213e 0%,#0f3460 40%,#1a1a2e 100%);}
+#topBar{display:flex;align-items:center;justify-content:space-between;padding:6px 12px;background:rgba(0,0,0,0.4);border-bottom:1px solid rgba(255,255,255,0.08);flex-shrink:0;min-height:40px;}
+#topBar .stat{display:flex;align-items:center;gap:4px;font-size:12px;}
+#topBar .stat .label{color:#8899aa;}
+#topBar .stat .value{color:#fff;font-weight:600;min-width:12px;}
+#topBar .stat .value.green{color:#4ade80;}
+#topBar .stat .value.red{color:#f87171;}
+#topBar .mode-toggle{display:flex;gap:0;}
+#topBar .mode-toggle button{background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:#8899aa;padding:3px 10px;font-size:11px;cursor:pointer;transition:all 0.15s;}
+#topBar .mode-toggle button.active{background:#4361ee;color:#fff;border-color:#4361ee;}
+#topBar .mode-toggle button:first-child{border-radius:5px 0 0 5px;}
+#topBar .mode-toggle button:last-child{border-radius:0 5px 5px 0;}
+#canvasWrapper{flex:1;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;min-height:0;}
+#sceneCanvas{display:block;width:100%;height:100%;}
+#feedbackOverlay{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;font-size:48px;font-weight:900;opacity:0;transition:opacity 0.3s;text-shadow:0 2px 12px rgba(0,0,0,0.6);z-index:10;}
+#feedbackOverlay.show{opacity:1;}
+#feedbackOverlay.correct{color:#4ade80;}
+#feedbackOverlay.wrong{color:#f87171;}
+#countdownBar{position:absolute;bottom:0;left:0;height:5px;background:linear-gradient(90deg,#f87171,#fb923c);width:100%;transform-origin:left;transition:none;}
+#txWrapper{flex-shrink:0;height:200px;position:relative;background:linear-gradient(180deg,#1e293b 0%,#0f172a 100%);border-top:2px solid rgba(255,255,255,0.06);}
+#txCanvas{display:block;width:100%;height:100%;}
+#answerOverlay{position:absolute;top:56px;left:0;right:0;display:none;align-items:flex-start;justify-content:center;background:rgba(0,0,0,0.55);z-index:20;flex-direction:column;gap:12px;padding:14px 16px;}
+#answerOverlay.show{display:flex;}
+#answerOverlay .card{background:rgba(20,28,45,0.96);border:1px solid rgba(255,255,255,0.15);border-radius:12px;padding:12px 18px;text-align:center;max-width:100%;width:100%;box-shadow:0 8px 30px rgba(0,0,0,0.5);}
+#answerOverlay .card .title{font-size:15px;font-weight:700;color:#f87171;margin-bottom:6px;}
+#answerOverlay .card .desc{font-size:13px;color:#d5dee8;line-height:1.5;}
+#answerOverlay .card .desc b{color:#4ade80;}
+#answerOk{align-self:center;background:#4361ee;border:none;color:#fff;font-size:14px;font-weight:600;padding:8px 40px;border-radius:20px;cursor:pointer;box-shadow:0 4px 16px rgba(67,97,238,0.4);}
+#answerOk:active{background:#3651d6;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="topBar">
+    <div class="stat">
+      <span class="label">正确</span>
+      <span class="value green" id="correctCount">0</span>
+      <span class="label" style="margin:0 2px;color:#556;">/</span>
+      <span class="value" id="totalCount">0</span>
+      <span class="label" style="margin-left:6px;">正确率</span>
+      <span class="value green" id="accuracyPct">--%</span>
+    </div>
+    <div class="mode-toggle">
+      <button id="modeFree" class="active">自由练习</button>
+      <button id="modeAdv">挑战模式</button>
+    </div>
+  </div>
+  <div id="canvasWrapper">
+    <canvas id="sceneCanvas"></canvas>
+    <div id="feedbackOverlay"></div>
+    <div id="countdownBar"></div>
+  </div>
+  <div id="txWrapper">
+    <canvas id="txCanvas"></canvas>
+  </div>
+  <div id="answerOverlay">
+    <div class="card">
+      <div class="title">回答错误 · 正确答案</div>
+      <div class="desc" id="answerDesc"></div>
+    </div>
+    <button id="answerOk">确定</button>
+  </div>
+</div>
+<script>
+(function() {
+'use strict';
+
+var S = {
+  droneX: 0, droneY: 0,
+  droneHeading: 0,
+  barrelRadius: 0.08,
+  droneRadius: 0.054,
+  correct: 0,
+  total: 0,
+  isAdvanced: false,
+  answered: false,
+  showAnswer: false,
+  correctSX: 0, correctSY: 0,
+  feedbackTimer: null,
+  timeLimit: 3000,
+  countdownStart: 0,
+  rightStickX: 0, rightStickY: 0,
+  leftStickX: 0, leftStickY: 0,
+  stickThreshold: 0.13,
+};
+
+var sceneCanvas = document.getElementById('sceneCanvas');
+var txCanvas = document.getElementById('txCanvas');
+var ctxScene = sceneCanvas.getContext('2d');
+var ctxTx = txCanvas.getContext('2d');
+
+var planeImg = new Image();
+planeImg.src = 'assets/at-icons--paper-airplane.png';
+planeImg.onload = function() { renderScene(); };
+
+var sceneW = 400, sceneH = 400, txW = 400, txH = 200;
+var cx = 200, cy = 200, cr = 180;
+
+function dpr() { return window.devicePixelRatio || 1; }
+
+function resize() {
+  var sw = sceneCanvas.parentElement.clientWidth;
+  var sh = sceneCanvas.parentElement.clientHeight;
+  var dp = dpr();
+  sceneCanvas.width = sw * dp;
+  sceneCanvas.height = sh * dp;
+  sceneCanvas.style.width = sw + 'px';
+  sceneCanvas.style.height = sh + 'px';
+  sceneW = sw;
+  sceneH = sh;
+
+  var tw = txCanvas.parentElement.clientWidth;
+  var th = txCanvas.parentElement.clientHeight;
+  txCanvas.width = tw * dp;
+  txCanvas.height = th * dp;
+  txCanvas.style.width = tw + 'px';
+  txCanvas.style.height = th + 'px';
+  txW = tw;
+  txH = th;
+
+  var size = Math.min(sw, sh) * 0.88;
+  cx = sw / 2;
+  cy = sh / 2;
+  cr = size / 2;
+}
+
+function renderScene() {
+  var dp = dpr();
+  var ctx = ctxScene;
+  var w = sceneCanvas.width;
+  var h = sceneCanvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  var _cx = cx * dp;
+  var _cy = cy * dp;
+  var _r = cr * dp;
+  var _br = S.barrelRadius * _r;
+  var _dr = S.droneRadius * _r;
+
+  ctx.fillStyle = '#0a0e1a';
+  ctx.fillRect(0, 0, w, h);
+
+  ctx.beginPath();
+  ctx.arc(_cx, _cy, _r, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(100,180,255,0.25)';
+  ctx.lineWidth = 8692 * dp;
+  ctx.stroke();
+
+  var grad = ctx.createRadialGradient(_cx, _cy, 0, _cx, _cy, _r);
+  grad.addColorStop(0, 'rgba(20,60,120,0.12)');
+  grad.addColorStop(0.7, 'rgba(20,56,80,0.06)');
+  grad.addColorStop(1, 'rgba(0,20,40,0.18)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(_cx, _cy, _r, 0, Math.PI * 2);
+  ctx.fill();
+
+  for (var i = 1; i <= 3; i++) {
+    var rr = (i / 4) * _r;
+    ctx.beginPath();
+    ctx.arc(_cx, _cy, rr, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+    ctx.lineWidth = 1 * dp;
+    ctx.setLineDash([4 * dp, 6 * dp]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  ctx.strokeStyle = 'rgba(100,180,255,0.08)';
+  ctx.lineWidth = 1 * dp;
+  ctx.setLineDash([3 * dp, 5 * dp]);
+  ctx.beginPath();
+  ctx.moveTo(_cx - _r, _cy); ctx.lineTo(_cx + _r, _cy);
+  ctx.moveTo(_cx, _cy - _r); ctx.lineTo(_cx, _cy + _r);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Barrel
+  ctx.beginPath();
+  ctx.arc(_cx, _cy, _br, 0, Math.PI * 2);
+  var bg = ctx.createRadialGradient(_cx - _br * 0.3, _cy - _br * 0.3, 0, _cx, _cy, _br);
+  bg.addColorStop(0, '#5c8a5c');
+  bg.addColorStop(0.4, '#3d6b3d');
+  bg.addColorStop(1, '#1a3a1a');
+  ctx.fillStyle = bg;
+  ctx.fill();
+  ctx.strokeStyle = '#6a9a6a';
+  ctx.lineWidth = 1.5 * dp;
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(_cx, _cy, _br * 0.6, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = 1 * dp;
+  ctx.stroke();
+
+      // Drone - paper airplane icon
+  var dx = _cx + S.droneX * _r;
+  var dy = _cy + S.droneY * _r;
+  var hd = S.droneHeading;
+  if (planeImg.complete && planeImg.naturalWidth > 0) {
+    ctx.save();
+    ctx.translate(dx, dy);
+    ctx.rotate(hd);
+    var wImg = _dr * 3.4;
+    var hImg = wImg * (planeImg.naturalHeight / planeImg.naturalWidth);
+    ctx.shadowColor = 'rgba(255,200,50,0.3)';
+    ctx.shadowBlur = 14 * dp;
+    ctx.drawImage(planeImg, -wImg / 2, -hImg / 2, wImg, hImg);
+    ctx.restore();
+  } else {
+    ctx.beginPath();
+    ctx.arc(dx, dy, _dr * 1.2, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffcc00';
+    ctx.fill();
+  }
+  var tbx = _cx - dx;
+  var tby = _cy - dy;
+  var tbd = Math.sqrt(tbx * tbx + tby * tby);
+
+  var pct = Math.round(tbd / _r * 100);
+  ctx.fillStyle = 'rgba(150,180,220,0.25)';
+  ctx.font = Math.round(8 * dp) + 'px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText(pct + '% 偏离', _cx, _cy + _r + 6 * dp);
+
+  if (S.showAnswer) {
+    var tbmag = Math.sqrt(tbx * tbx + tby * tby) || 1;
+    var ux = tbx / tbmag;
+    var uy = tby / tbmag;
+    var alen = _dr * 8;
+    drawArrow(ctx, dx, dy, dx + ux * alen, dy + uy * alen, 'rgba(74,222,128,0.95)', dp);
+  }
+}
+
+function renderTx() {
+  var dp = dpr();
+  var ctx = ctxTx;
+  var w = txCanvas.width;
+  var h = txCanvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  var cw = txW;
+  var ch = txH;
+
+  var bg = ctx.createLinearGradient(0, 0, 0, h);
+  bg.addColorStop(0, '#1e293b');
+  bg.addColorStop(0.5, '#0f172a');
+  bg.addColorStop(1, '#080d18');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, w, h);
+
+  var px = cw * 0.04;
+  var py = ch * 0.04;
+  var bw = cw - px * 2;
+  var bh = ch - py * 2;
+  var bx = px * dp;
+  var by = py * dp;
+  var _bw = bw * dp;
+  var _bh = bh * dp;
+  var rr = 10 * dp;
+
+  ctx.beginPath();
+  ctx.moveTo(bx + rr, by);
+  ctx.lineTo(bx + _bw - rr, by);
+  ctx.quadraticCurveTo(bx + _bw, by, bx + _bw, by + rr);
+  ctx.lineTo(bx + _bw, by + _bh - rr);
+  ctx.quadraticCurveTo(bx + _bw, by + _bh, bx + _bw - rr, by + _bh);
+  ctx.lineTo(bx + rr, by + _bh);
+  ctx.quadraticCurveTo(bx, by + _bh, bx, by + _bh - rr);
+  ctx.lineTo(bx, by + rr);
+  ctx.quadraticCurveTo(bx, by, bx + rr, by);
+  ctx.closePath();
+  var bf = ctx.createLinearGradient(0, by, 0, by + _bh);
+  bf.addColorStop(0, '#253550');
+  bf.addColorStop(0.3, '#1a2a45');
+  bf.addColorStop(0.7, '#121d35');
+  bf.addColorStop(1, '#0c1425');
+  ctx.fillStyle = bf;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(150,180,220,0.12)';
+  ctx.lineWidth = 1 * dp;
+  ctx.stroke();
+
+  var marginX = cw * 0.15;
+  var marginY = ch * 0.12;
+  var gR = Math.min(cw * 0.12, ch * 0.18);
+
+  var lcx = marginX + gR + cw * 0.04;
+  var lcy = marginY + gR + ch * 0.04;
+  var rcx = cw - marginX - gR - cw * 0.04;
+  var rcy = lcy;
+
+  ctx.fillStyle = 'rgba(180,200,230,0.4)';
+  ctx.font = Math.round(9 * dp) + 'px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('左摇杆', lcx * dp, (marginY - 8) * dp);
+  ctx.fillStyle = 'rgba(150,180,220,0.2)';
+  ctx.font = Math.round(7 * dp) + 'px sans-serif';
+  ctx.fillText('油门', lcx * dp, (marginY + gR * 2 + 18) * dp);
+  ctx.fillText('偏航', lcx * dp, (marginY + gR * 2 + 30) * dp);
+
+  ctx.fillStyle = 'rgba(249,168,37,0.45)';
+  ctx.font = Math.round(9 * dp) + 'px sans-serif';
+  ctx.fillText('右摇杆', rcx * dp, (marginY - 8) * dp);
+  ctx.fillStyle = 'rgba(150,180,220,0.2)';
+  ctx.font = Math.round(7 * dp) + 'px sans-serif';
+  ctx.fillText('俯仰/横滚', rcx * dp, (marginY + gR * 2 + 18) * dp);
+
+  drawGimbal(ctx, lcx, lcy, gR, S.leftStickX, S.leftStickY, dp, false);
+  drawGimbal(ctx, rcx, rcy, gR, S.rightStickX, S.rightStickY, dp, true);
+
+  if (S.showAnswer) {
+    var gcx = rcx * dp;
+    var gcy = rcy * dp;
+    var gr = gR * dp;
+    var arad = gr * 1.25;
+    drawArrow(ctx, gcx, gcy,
+              gcx + S.correctSX * arad, gcy + S.correctSY * arad,
+              'rgba(74,222,128,0.95)', dp);
+  }
+}
+
+function drawGimbal(ctx, cx, cy, radius, sx, sy, dp, highlight) {
+  var _cx = cx * dp;
+  var _cy = cy * dp;
+  var r = radius * dp;
+
+  ctx.beginPath();
+  ctx.arc(_cx, _cy, r, 0, Math.PI * 2);
+  var g = ctx.createRadialGradient(_cx - r * 0.2, _cy - r * 0.2, 0, _cx, _cy, r);
+  g.addColorStop(0, highlight ? 'rgba(60,100,210,0.3)' : 'rgba(40,60,80,0.25)');
+  g.addColorStop(0.7, highlight ? 'rgba(40,80,180,0.2)' : 'rgba(30,50,70,0.15)');
+  g.addColorStop(1, 'rgba(20,30,50,0.2)');
+  ctx.fillStyle = g;
+  ctx.fill();
+  ctx.strokeStyle = highlight ? 'rgba(100,150,255,0.35)' : 'rgba(100,120,140,0.15)';
+  ctx.lineWidth = 1.5 * dp;
+  ctx.stroke();
+
+  var ir = r * 0.7;
+  ctx.beginPath();
+  ctx.arc(_cx, _cy, ir, 0, Math.PI * 2);
+  ctx.strokeStyle = highlight ? 'rgba(80,130,255,0.12)' : 'rgba(80,100,120,0.1)';
+  ctx.lineWidth = 1 * dp;
+  ctx.stroke();
+
+  var kx = _cx + sx * ir;
+  var ky = _cy + sy * ir;
+  var kr = r * 0.25;
+
+  ctx.beginPath();
+  ctx.arc(kx + 1.5 * dp, ky + 2 * dp, kr, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(kx, ky, kr, 0, Math.PI * 2);
+  var kg = ctx.createRadialGradient(kx - kr * 0.3, ky - kr * 0.3, 0, kx, ky, kr);
+  kg.addColorStop(0, highlight ? '#80b0ff' : '#7a8a9a');
+  kg.addColorStop(0.5, highlight ? '#4070e5' : '#3a4a5a');
+  kg.addColorStop(1, highlight ? '#1a3a8a' : '#1a2a3a');
+  ctx.fillStyle = kg;
+  ctx.fill();
+  ctx.strokeStyle = highlight ? 'rgba(150,200,255,0.5)' : 'rgba(150,170,190,0.2)';
+  ctx.lineWidth = 1 * dp;
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(kx - kr * 0.2, ky - kr * 0.2, kr * 0.15, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  ctx.fill();
+
+  if (highlight) {
+    ctx.fillStyle = 'rgba(100,150,255,0.15)';
+    ctx.font = Math.round(7 * dp) + 'px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('↑', _cx, _cy - r - 5 * dp);
+    ctx.fillText('↓', _cx, _cy + r + 5 * dp);
+    ctx.fillText('←', _cx - r - 5 * dp, _cy);
+    ctx.fillText('→', _cx + r + 5 * dp, _cy);
+  }
+}
+
+var activeStick = null;
+var mouseDown = false;
+
+function getGimbalCenters() {
+  var cw = txW;
+  var ch = txH;
+  var marginX = cw * 0.15;
+  var marginY = ch * 0.12;
+  var gR = Math.min(cw * 0.12, ch * 0.18);
+  var lcx = marginX + gR + cw * 0.04;
+  var lcy = marginY + gR + ch * 0.04;
+  var rcx = cw - marginX - gR - cw * 0.04;
+  return { lcx: lcx, lcy: lcy, rcx: rcx, rcy: lcy, gR: gR };
+}
+
+function hitStick(mx, my) {
+  var c = getGimbalCenters();
+  var h = c.gR + 8;
+  if (Math.abs(mx - c.lcx) < h && Math.abs(my - c.lcy) < h) return 'left';
+  if (Math.abs(mx - c.rcx) < h && Math.abs(my - c.rcy) < h) return 'right';
+  return null;
+}
+
+function updateStick(mx, my) {
+  if (!activeStick) return;
+  var c = getGimbalCenters();
+  var _cx = activeStick === 'left' ? c.lcx : c.rcx;
+  var _cy = activeStick === 'left' ? c.lcy : c.rcy;
+
+  var dx = mx - _cx;
+  var dy = my - _cy;
+  var d = Math.sqrt(dx * dx + dy * dy);
+  var maxD = c.gR * 0.7;
+  if (d > maxD) { dx = dx / d * maxD; dy = dy / d * maxD; }
+  var nx = dx / maxD;
+  var ny = dy / maxD;
+
+  if (activeStick === 'left') {
+    S.leftStickX = nx;
+    S.leftStickY = ny;
+  } else {
+    S.rightStickX = nx;
+    S.rightStickY = ny;
+  }
+  renderTx();
+}
+
+function releaseStick() {
+  if (activeStick === 'right' && !S.answered && mouseDown) {
+    evaluateAnswer(S.rightStickX, S.rightStickY);
+  }
+  if (activeStick === 'right') { S.rightStickX = 0; S.rightStickY = 0; }
+  else if (activeStick === 'left') { S.leftStickX = 0; S.leftStickY = 0; }
+  activeStick = null;
+  mouseDown = false;
+  renderTx();
+}
+
+function getPos(e) {
+  var rect = txCanvas.getBoundingClientRect();
+  var t = e.touches ? e.touches[0] : e;
+  return {
+    mx: (t.clientX - rect.left) / rect.width * txW,
+    my: (t.clientY - rect.top) / rect.height * txH
+  };
+}
+
+function onTouchStart(e) { e.preventDefault(); var p = getPos(e); var hit = hitStick(p.mx, p.my); if (hit) { activeStick = hit; mouseDown = true; updateStick(p.mx, p.my); } }
+function onTouchMove(e) { e.preventDefault(); if (!mouseDown || !activeStick) return; var p = getPos(e); updateStick(p.mx, p.my); }
+function onTouchEnd(e) { e.preventDefault(); releaseStick(); }
+
+function onMouseDown(e) {
+  var rect = txCanvas.getBoundingClientRect();
+  var mx = (e.clientX - rect.left) / rect.width * txW;
+  var my = (e.clientY - rect.top) / rect.height * txH;
+  var hit = hitStick(mx, my);
+  if (hit) { activeStick = hit; mouseDown = true; updateStick(mx, my); }
+}
+function onMouseMove(e) {
+  if (!mouseDown || !activeStick) return;
+  var rect = txCanvas.getBoundingClientRect();
+  var mx = (e.clientX - rect.left) / rect.width * txW;
+  var my = (e.clientY - rect.top) / rect.height * txH;
+  updateStick(mx, my);
+}
+function onMouseUp(e) { releaseStick(); }
+
+function evaluateAnswer(stickX, stickY) {
+  if (S.answered) return;
+  S.answered = true;
+  S.total++;
+
+  var stickMag = Math.sqrt(stickX * stickX + stickY * stickY);
+  var match = false;
+
+  if (stickMag >= S.stickThreshold) {
+    // Vector from drone to center in screen space (canvas Y-down).
+    var toCX = -S.droneX;
+    var toCY = -S.droneY;
+    var worldAngle = Math.atan2(toCY, toCX);
+
+    // Heading-referenced (机头导向): stick up = pitch forward = move along
+    // nose direction; stick right = roll right = move along the aircraft's
+    // right side. forward_hat = (cos hd, sin hd), right_hat = (-sin hd, cos hd).
+    var hd = S.droneHeading;
+    var vx = -stickY * Math.cos(hd) - stickX * Math.sin(hd);
+    var vy = -stickY * Math.sin(hd) + stickX * Math.cos(hd);
+    var velocityAngle = Math.atan2(vy, vx);
+
+    var diff = velocityAngle - worldAngle;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+
+    match = Math.abs(diff) < Math.PI / 4; // within 45 degrees
+  }
+
+  if (match) { S.correct++; }
+  updateUI();
+  if (match) {
+    showFeedback(true);
+    scheduleNext();
+  } else {
+    showFeedback(false);
+    showAnswerSolution();
+  }
+}
+
+function showFeedback(ok) {
+  var el = document.getElementById('feedbackOverlay');
+  el.textContent = ok ? '正确!' : '错误';
+  el.className = 'show ' + (ok ? 'correct' : 'wrong');
+  clearTimeout(S.feedbackTimer);
+  S.feedbackTimer = setTimeout(function() { el.className = ''; }, 600);
+}
+
+function computeCorrectAnswer() {
+  var toCX = -S.droneX;
+  var toCY = -S.droneY;
+  var mag = Math.sqrt(toCX * toCX + toCY * toCY) || 1;
+  var ux = toCX / mag;
+  var uy = toCY / mag;
+  var hd = S.droneHeading;
+  var sh = Math.sin(hd), ch = Math.cos(hd);
+  // Invert the velocity transform: v = -stickY*forward_hat - stickX*right_hat
+  //   forward_hat=(ch, sh), right_hat=(-sh, ch)
+  //   vx = -stickY*ch - stickX*(-sh) = -stickY*ch + stickX*sh
+  //   vy = -stickY*sh - stickX*ch
+  // Given v = unit direction to center (ux, uy), solve for stick:
+  //   stickX =   ux*sh + uy*sh ... solve 2x2 below.
+  // A = [[ sh, -ch ], [ -ch, -sh ]] * [stickX, stickY]^T = [ux, uy]^T
+  // det = sh*(-sh) - (-ch)*(-ch) = -sh^2 - ch^2 = -1
+  // stickX = (-sh) * ux + (ch) * uy   (after inverting with det=-1)
+  // stickY = (-ch) * ux - (sh) * uy
+  S.correctSX = -sh * ux + ch * uy;
+  S.correctSY = -ch * ux - sh * uy;
+}
+
+function stickDirText(sx, sy) {
+  var up = -sy;
+  var right = sx;
+  var v = up >= 0.3 ? '上' : (up <= -0.3 ? '下' : '');
+  var h = right >= 0.3 ? '右' : (right <= -0.3 ? '左' : '');
+  return (v + h) || '正中';
+}
+
+function showAnswerSolution() {
+  S.showAnswer = true;
+  computeCorrectAnswer();
+  var dir = stickDirText(S.correctSX, S.correctSY);
+  document.getElementById('answerDesc').innerHTML =
+    '右摇杆应向 <b>' + dir + '</b> 方向推（图中绿色箭头方向）。';
+  document.getElementById('answerOverlay').className = 'show';
+  renderScene();
+  renderTx();
+}
+
+function hideAnswerSolution() {
+  S.showAnswer = false;
+  document.getElementById('answerOverlay').className = '';
+}
+
+function drawArrow(ctx, x1, y1, x2, y2, color, dp) {
+  var ang = Math.atan2(y2 - y1, x2 - x1);
+  var head = 9 * dp;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.5 * dp;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - Math.cos(ang - 0.45) * head, y2 - Math.sin(ang - 0.45) * head);
+  ctx.lineTo(x2 - Math.cos(ang + 0.45) * head, y2 - Math.sin(ang + 0.45) * head);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+}
+
+function updateUI() {
+  document.getElementById('correctCount').textContent = S.correct;
+  document.getElementById('totalCount').textContent = S.total;
+  var pct = S.total > 0 ? Math.round(S.correct / S.total * 100) : 0;
+  document.getElementById('accuracyPct').textContent = S.total > 0 ? pct + '%' : '--%';
+}
+
+function generateScene() {
+  var angle = Math.random() * Math.PI * 2;
+  var dist = 0.3 + Math.random() * 0.55;
+  S.droneX = Math.cos(angle) * dist;
+  S.droneY = Math.sin(angle) * dist;
+  S.droneHeading = (Math.random() - 0.5) * Math.PI * 2;
+
+  S.answered = false;
+  S.rightStickX = 0; S.rightStickY = 0;
+  S.leftStickX = 0; S.leftStickY = 0;
+  activeStick = null;
+  mouseDown = false;
+
+  document.getElementById('feedbackOverlay').className = '';
+  hideAnswerSolution();
+  restartCountdown();
+  renderScene();
+  renderTx();
+}
+
+function scheduleNext() {
+  setTimeout(generateScene, 600);
+}
+
+var countdownRaf = null;
+var countdownActive = false;
+
+function restartCountdown() {
+  if (countdownRaf) { cancelAnimationFrame(countdownRaf); countdownRaf = null; }
+  countdownActive = false;
+  var bar = document.getElementById('countdownBar');
+  bar.style.width = '100%';
+  bar.style.transition = 'none';
+
+  if (S.isAdvanced && !S.answered) {
+    bar.offsetHeight;
+    bar.style.transition = 'width ' + S.timeLimit + 'ms linear';
+    bar.style.width = '0%';
+    countdownActive = true;
+    S.countdownStart = performance.now();
+    countdownRaf = requestAnimationFrame(checkCountdown);
+  }
+}
+
+function checkCountdown(ts) {
+  if (!countdownActive || S.answered) { countdownActive = false; return; }
+  var elapsed = ts - S.countdownStart;
+  if (elapsed >= S.timeLimit) {
+    countdownActive = false;
+    if (!S.answered) {
+      S.answered = true;
+      S.total++;
+      S.correctSX = 0; S.correctSY = 0;
+      showFeedback(false);
+      updateUI();
+      showAnswerSolution();
+    }
+    return;
+  }
+  countdownRaf = requestAnimationFrame(checkCountdown);
+}
+
+function setMode(advanced) {
+  S.isAdvanced = advanced;
+  document.getElementById('modeFree').className = advanced ? '' : 'active';
+  document.getElementById('modeAdv').className = advanced ? 'active' : '';
+  if (advanced && !S.answered) { restartCountdown(); }
+  else if (!advanced) {
+    if (countdownRaf) { cancelAnimationFrame(countdownRaf); countdownRaf = null; }
+    countdownActive = false;
+    document.getElementById('countdownBar').style.width = '100%';
+  }
+}
+
+var resizeTO;
+function onResize() {
+  clearTimeout(resizeTO);
+  resizeTO = setTimeout(function() { resize(); renderScene(); renderTx(); }, 100);
+}
+
+function init() {
+  resize();
+
+  txCanvas.addEventListener('touchstart', onTouchStart, { passive: false });
+  txCanvas.addEventListener('touchmove', onTouchMove, { passive: false });
+  txCanvas.addEventListener('touchend', onTouchEnd, { passive: false });
+  txCanvas.addEventListener('touchcancel', onTouchEnd, { passive: false });
+
+  txCanvas.addEventListener('mousedown', onMouseDown);
+  window.addEventListener('mousemove', onMouseMove);
+  window.addEventListener('mouseup', onMouseUp);
+
+  document.getElementById('modeFree').addEventListener('click', function() { setMode(false); });
+  document.getElementById('modeAdv').addEventListener('click', function() { setMode(true); });
+  document.getElementById('answerOk').addEventListener('click', function() {
+    hideAnswerSolution();
+    generateScene();
+  });
+
+  window.addEventListener('resize', onResize);
+  window.addEventListener('orientationchange', function() { setTimeout(onResize, 300); });
+
+  generateScene();
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
+
+})();
+</script>
+</body>
+</html>

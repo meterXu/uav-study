@@ -1,0 +1,42 @@
+<view class="app">
+  <view class="top-bar">
+    <view class="stat">
+      <text class="label">正确</text>
+      <text class="value green">{{correct}}</text>
+      <text class="label dim">/</text>
+      <text class="value">{{total}}</text>
+      <text class="label gap">正确率</text>
+      <text class="value green">{{accuracy}}</text>
+    </view>
+    <view class="mode-toggle">
+      <view class="mode-btn {{isAdvanced ? '' : 'active'}}" bindtap="setFree">自由练习</view>
+      <view class="mode-btn {{isAdvanced ? 'active' : ''}}" bindtap="setAdv">挑战模式</view>
+    </view>
+  </view>
+
+  <view class="canvas-wrap">
+    <canvas type="2d" id="scene" class="scene-canvas"></canvas>
+    <view class="feedback {{feedbackClass}}" wx:if="{{feedbackText}}">{{feedbackText}}</view>
+    <view class="countdown-bar" style="width: {{countdownWidth}}%; transition: {{countdownAnimating ? 'width ' + timeLimit + 'ms linear' : 'none'}};"></view>
+  </view>
+
+  <view class="tx-wrap">
+    <canvas
+      type="2d"
+      id="tx"
+      class="tx-canvas"
+      bindtouchstart="onTxTouchStart"
+      bindtouchmove="onTxTouchMove"
+      bindtouchend="onTxTouchEnd"
+      bindtouchcancel="onTxTouchEnd"
+    ></canvas>
+  </view>
+
+  <view class="answer-overlay" wx:if="{{showAnswer}}">
+    <view class="card">
+      <view class="title">回答错误 · 正确答案</view>
+      <view class="desc">右摇杆应向 <text class="hl">{{answerDir}}</text> 方向推（图中绿色箭头方向）。</view>
+    </view>
+    <view class="ok-btn" bindtap="onAnswerOk">确定</view>
+  </view>
+</view>
