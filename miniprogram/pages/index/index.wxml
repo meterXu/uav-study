@@ -10,7 +10,7 @@
     </view>
     <view class="mode-toggle">
       <view class="mode-btn {{isAdvanced ? '' : 'active'}}" bindtap="setFree">自由练习</view>
-      <view class="mode-btn {{isAdvanced ? 'active' : ''}}" bindtap="setAdv">挑战模式</view>
+      <view class="mode-btn {{isAdvanced ? 'active-amber' : ''}}" bindtap="setAdv">挑战模式</view>
     </view>
   </view>
 
@@ -35,7 +35,7 @@
   <view class="answer-overlay" wx:if="{{showAnswer}}">
     <view class="card">
       <view class="title">回答错误 · 正确答案</view>
-      <view class="desc">右摇杆应向 <text class="hl">{{answerDir}}</text> 方向推（图中绿色箭头方向）。</view>
+      <view class="desc">右摇杆应向 <text class="hl">{{answerDir}}</text> 方向推（绿色箭头方向）</view>
     </view>
     <view class="ok-btn" bindtap="onAnswerOk">确定</view>
   </view>

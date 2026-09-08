@@ -152,19 +152,19 @@ Page({
     const _dr = S.droneRadius * _r;
 
     ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = '#0a0e1a';
+    ctx.fillStyle = '#0a0f1a';
     ctx.fillRect(0, 0, w, h);
 
     ctx.beginPath();
     ctx.arc(_cx, _cy, _r, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(100,180,255,0.25)';
+    ctx.strokeStyle = 'rgba(56,189,248,0.28)';
     ctx.lineWidth = 2;
     ctx.stroke();
 
     const grad = ctx.createRadialGradient(_cx, _cy, 0, _cx, _cy, _r);
-    grad.addColorStop(0, 'rgba(20,60,120,0.12)');
-    grad.addColorStop(0.7, 'rgba(20,56,80,0.06)');
-    grad.addColorStop(1, 'rgba(0,20,40,0.18)');
+    grad.addColorStop(0, 'rgba(14,165,233,0.14)');
+    grad.addColorStop(0.7, 'rgba(14,116,190,0.06)');
+    grad.addColorStop(1, 'rgba(2,6,23,0.22)');
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.arc(_cx, _cy, _r, 0, Math.PI * 2);
@@ -174,14 +174,14 @@ Page({
       const rr = (i / 4) * _r;
       ctx.beginPath();
       ctx.arc(_cx, _cy, rr, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+      ctx.strokeStyle = 'rgba(148,163,184,0.05)';
       ctx.lineWidth = 1;
       ctx.setLineDash([4, 6]);
       ctx.stroke();
       ctx.setLineDash([]);
     }
 
-    ctx.strokeStyle = 'rgba(100,180,255,0.08)';
+    ctx.strokeStyle = 'rgba(56,189,248,0.10)';
     ctx.lineWidth = 1;
     ctx.setLineDash([3, 5]);
     ctx.beginPath();
@@ -196,18 +196,18 @@ Page({
     ctx.beginPath();
     ctx.arc(_cx, _cy, _br, 0, Math.PI * 2);
     const bg = ctx.createRadialGradient(_cx - _br * 0.3, _cy - _br * 0.3, 0, _cx, _cy, _br);
-    bg.addColorStop(0, '#5c8a5c');
-    bg.addColorStop(0.4, '#3d6b3d');
-    bg.addColorStop(1, '#1a3a1a');
+    bg.addColorStop(0, '#334155');
+    bg.addColorStop(0.4, '#1e293b');
+    bg.addColorStop(1, '#0f172a');
     ctx.fillStyle = bg;
     ctx.fill();
-    ctx.strokeStyle = '#6a9a6a';
+    ctx.strokeStyle = '#475569';
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
     ctx.beginPath();
     ctx.arc(_cx, _cy, _br * 0.6, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.strokeStyle = 'rgba(241,245,249,0.10)';
     ctx.lineWidth = 1;
     ctx.stroke();
 
@@ -221,14 +221,14 @@ Page({
       ctx.rotate(hd);
       const wImg = _dr * 3.4;
       const hImg = wImg * (this.planeImg.height / this.planeImg.width);
-      ctx.shadowColor = 'rgba(255,200,50,0.3)';
+      ctx.shadowColor = 'rgba(56,189,248,0.4)';
       ctx.shadowBlur = 14;
       ctx.drawImage(this.planeImg, -wImg / 2, -hImg / 2, wImg, hImg);
       ctx.restore();
     } else {
       ctx.beginPath();
       ctx.arc(dx, dy, _dr * 1.2, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffcc00';
+      ctx.fillStyle = '#38bdf8';
       ctx.fill();
     }
 
@@ -237,7 +237,7 @@ Page({
     const tbd = Math.sqrt(tbx * tbx + tby * tby);
 
     const pct = Math.round((tbd / _r) * 100);
-    ctx.fillStyle = 'rgba(150,180,220,0.25)';
+    ctx.fillStyle = 'rgba(148,163,184,0.55)';
     ctx.font = '8px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
@@ -260,9 +260,9 @@ Page({
     ctx.clearRect(0, 0, w, h);
 
     const bg = ctx.createLinearGradient(0, 0, 0, h);
-    bg.addColorStop(0, '#1e293b');
+    bg.addColorStop(0, '#111827');
     bg.addColorStop(0.5, '#0f172a');
-    bg.addColorStop(1, '#080d18');
+    bg.addColorStop(1, '#0a0f1a');
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, w, h);
 
@@ -284,13 +284,13 @@ Page({
     ctx.quadraticCurveTo(px, py, px + rr, py);
     ctx.closePath();
     const bf = ctx.createLinearGradient(0, py, 0, py + bh);
-    bf.addColorStop(0, '#253550');
-    bf.addColorStop(0.3, '#1a2a45');
-    bf.addColorStop(0.7, '#121d35');
-    bf.addColorStop(1, '#0c1425');
+    bf.addColorStop(0, '#1e293b');
+    bf.addColorStop(0.3, '#16202f');
+    bf.addColorStop(0.7, '#0f172a');
+    bf.addColorStop(1, '#0b1220');
     ctx.fillStyle = bf;
     ctx.fill();
-    ctx.strokeStyle = 'rgba(150,180,220,0.12)';
+    ctx.strokeStyle = 'rgba(148,163,184,0.12)';
     ctx.lineWidth = 1;
     ctx.stroke();
 
@@ -302,20 +302,20 @@ Page({
     const rcx = w - marginX - gR - w * 0.04;
     const rcy = lcy;
 
-    ctx.fillStyle = 'rgba(180,200,230,0.4)';
+    ctx.fillStyle = 'rgba(148,163,184,0.55)';
     ctx.font = '9px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('左摇杆', lcx, marginY - 8);
-    ctx.fillStyle = 'rgba(150,180,220,0.2)';
+    ctx.fillStyle = 'rgba(100,116,139,0.4)';
     ctx.font = '7px sans-serif';
     ctx.fillText('油门', lcx, marginY + gR * 2 + 18);
     ctx.fillText('偏航', lcx, marginY + gR * 2 + 30);
 
-    ctx.fillStyle = 'rgba(249,168,37,0.45)';
+    ctx.fillStyle = 'rgba(245,158,11,0.7)';
     ctx.font = '9px sans-serif';
     ctx.fillText('右摇杆', rcx, marginY - 8);
-    ctx.fillStyle = 'rgba(150,180,220,0.2)';
+    ctx.fillStyle = 'rgba(100,116,139,0.4)';
     ctx.font = '7px sans-serif';
     ctx.fillText('俯仰/横滚', rcx, marginY + gR * 2 + 18);
 
@@ -335,19 +335,19 @@ Page({
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     const g = ctx.createRadialGradient(cx - r * 0.2, cy - r * 0.2, 0, cx, cy, r);
-    g.addColorStop(0, highlight ? 'rgba(60,100,210,0.3)' : 'rgba(40,60,80,0.25)');
-    g.addColorStop(0.7, highlight ? 'rgba(40,80,180,0.2)' : 'rgba(30,50,70,0.15)');
-    g.addColorStop(1, 'rgba(20,30,50,0.2)');
+    g.addColorStop(0, highlight ? 'rgba(14,165,233,0.28)' : 'rgba(30,41,59,0.3)');
+    g.addColorStop(0.7, highlight ? 'rgba(14,116,190,0.16)' : 'rgba(15,23,42,0.2)');
+    g.addColorStop(1, 'rgba(10,15,26,0.3)');
     ctx.fillStyle = g;
     ctx.fill();
-    ctx.strokeStyle = highlight ? 'rgba(100,150,255,0.35)' : 'rgba(100,120,140,0.15)';
+    ctx.strokeStyle = highlight ? 'rgba(56,189,248,0.4)' : 'rgba(71,85,105,0.2)';
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
     const ir = r * 0.7;
     ctx.beginPath();
     ctx.arc(cx, cy, ir, 0, Math.PI * 2);
-    ctx.strokeStyle = highlight ? 'rgba(80,130,255,0.12)' : 'rgba(80,100,120,0.1)';
+    ctx.strokeStyle = highlight ? 'rgba(56,189,248,0.14)' : 'rgba(71,85,105,0.12)';
     ctx.lineWidth = 1;
     ctx.stroke();
 
@@ -363,12 +363,12 @@ Page({
     ctx.beginPath();
     ctx.arc(kx, ky, kr, 0, Math.PI * 2);
     const kg = ctx.createRadialGradient(kx - kr * 0.3, ky - kr * 0.3, 0, kx, ky, kr);
-    kg.addColorStop(0, highlight ? '#80b0ff' : '#7a8a9a');
-    kg.addColorStop(0.5, highlight ? '#4070e5' : '#3a4a5a');
-    kg.addColorStop(1, highlight ? '#1a3a8a' : '#1a2a3a');
+    kg.addColorStop(0, highlight ? '#7dd3fc' : '#94a3b8');
+    kg.addColorStop(0.5, highlight ? '#0ea5e9' : '#475569');
+    kg.addColorStop(1, highlight ? '#0369a1' : '#1e293b');
     ctx.fillStyle = kg;
     ctx.fill();
-    ctx.strokeStyle = highlight ? 'rgba(150,200,255,0.5)' : 'rgba(150,170,190,0.2)';
+    ctx.strokeStyle = highlight ? 'rgba(125,211,252,0.5)' : 'rgba(148,163,184,0.2)';
     ctx.lineWidth = 1;
     ctx.stroke();
 
@@ -378,7 +378,7 @@ Page({
     ctx.fill();
 
     if (highlight) {
-      ctx.fillStyle = 'rgba(100,150,255,0.15)';
+      ctx.fillStyle = 'rgba(56,189,248,0.35)';
       ctx.font = '7px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
