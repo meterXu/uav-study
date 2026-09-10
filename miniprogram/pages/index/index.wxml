@@ -1,23 +1,35 @@
 <view class="app">
   <view class="top-bar">
     <view class="stat">
-      <text class="label">正确</text>
-      <text class="value green">{{correct}}</text>
-      <text class="label dim">/</text>
-      <text class="value">{{total}}</text>
-      <text class="label gap">正确率</text>
+      <text class="label">正确率</text>
       <text class="value green">{{accuracy}}</text>
     </view>
-    <view class="mode-toggle">
-      <view class="mode-btn {{isAdvanced ? '' : 'active'}}" bindtap="setFree">自由练习</view>
-      <view class="mode-btn {{isAdvanced ? 'active-amber' : ''}}" bindtap="setAdv">挑战模式</view>
+    <view class="bar-right">
+      <view class="mode-toggle">
+        <view class="mode-btn {{isAdvanced ? '' : 'active'}}" bindtap="setFree">
+          <image class="ico" src="{{isAdvanced ? '/images/icons/gamepad-gray.svg' : '/images/icons/gamepad-white.svg'}}" />
+        </view>
+        <view class="mode-btn {{isAdvanced ? 'active-amber' : ''}}" bindtap="setAdv">
+          <image class="ico" src="{{isAdvanced ? '/images/icons/lightning-white.svg' : '/images/icons/lightning-gray.svg'}}" />
+        </view>
+      </view>
+      <view class="new-btn" bindtap="newPractice">
+        <image class="ico" src="/images/icons/refresh.svg" />
+      </view>
+      <view class="stats-btn" bindtap="showStats">
+        <image class="ico" src="/images/icons/chart-bar.svg" />
+      </view>
     </view>
   </view>
 
   <view class="canvas-wrap">
-    <canvas type="2d" id="scene" class="scene-canvas"></canvas>
+    <canvas type="2d" id="scene" class="scene-canvas" bindtouchstart="onSceneTouch"></canvas>
     <view class="feedback {{feedbackClass}}" wx:if="{{feedbackText}}">{{feedbackText}}</view>
-    <view class="countdown-bar" style="width: {{countdownWidth}}%; transition: {{countdownAnimating ? 'width ' + timeLimit + 'ms linear' : 'none'}};"></view>
+    <view class="hint-text" wx:if="{{hintText}}">{{hintText}}</view>
+  </view>
+
+  <view class="divider-bar">
+    <view class="countdown-bar" wx:if="{{isAdvanced}}" style="width: {{countdownWidth}}%;"></view>
   </view>
 
   <view class="tx-wrap">
@@ -26,17 +38,17 @@
       id="tx"
       class="tx-canvas"
       bindtouchstart="onTxTouchStart"
-      bindtouchmove="onTxTouchMove"
+      catchtouchmove="onTxTouchMove"
       bindtouchend="onTxTouchEnd"
       bindtouchcancel="onTxTouchEnd"
     ></canvas>
   </view>
 
   <view class="answer-overlay" wx:if="{{showAnswer}}">
-    <view class="card">
-      <view class="title">回答错误 · 正确答案</view>
+    <view class="card {{answerType === 'timeout' ? 'card-timeout' : 'card-wrong'}}">
+      <view class="title">{{answerType === 'timeout' ? '时间到 · 超时未答' : '回答错误 · 正确答案'}}</view>
       <view class="desc">右摇杆应向 <text class="hl">{{answerDir}}</text> 方向推（绿色箭头方向）</view>
     </view>
-    <view class="ok-btn" bindtap="onAnswerOk">确定</view>
+    <view class="ok-btn" bindtap="onAnswerOk">继续</view>
   </view>
 </view>

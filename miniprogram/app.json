@@ -1,12 +1,13 @@
 {
   "pages": [
-    "pages/index/index"
+    "pages/index/index",
+    "pages/stats/stats"
   ],
   "window": {
-    "navigationBarBackgroundColor": "#0f172a",
-    "navigationBarTitleText": "无人机方向感训练",
+    "navigationBarBackgroundColor": "#1e293b",
+    "navigationBarTitleText": "学习飞行",
     "navigationBarTextStyle": "white",
-    "backgroundColor": "#0a0f1a",
+    "backgroundColor": "#f1f5f9",
     "backgroundTextStyle": "dark"
   },
   "sitemapLocation": "sitemap.json"

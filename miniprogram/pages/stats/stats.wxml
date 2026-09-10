@@ -1,0 +1,43 @@
+<view class="app">
+  <view class="head">
+    <view class="stat-card">
+      <text class="s-label">练习轮数</text>
+      <text class="s-value">{{totalRounds}}</text>
+    </view>
+    <view class="stat-card">
+      <text class="s-label">总题数</text>
+      <text class="s-value">{{totalQuestions}}</text>
+    </view>
+    <view class="stat-card">
+      <text class="s-label">平均正确率</text>
+      <text class="s-value green">{{avgAccuracy}}</text>
+    </view>
+  </view>
+
+  <view class="list-title">练习记录</view>
+
+  <view class="list" wx:if="{{rounds.length}}">
+    <view class="row" wx:for="{{rounds}}" wx:key="id">
+      <view class="row-top">
+        <text class="row-mode">{{item.mode}}</text>
+        <text class="row-time">{{item.time}}{{item.duration ? ' · ' + item.duration : ''}}</text>
+      </view>
+      <view class="row-metrics">
+        <view class="metric">
+          <text class="m-label">练习数</text>
+          <text class="m-value">{{item.total}}</text>
+        </view>
+        <view class="metric">
+          <text class="m-label">正确数</text>
+          <text class="m-value green">{{item.correct}}</text>
+        </view>
+        <view class="metric">
+          <text class="m-label">正确率</text>
+          <text class="m-value green">{{item.accuracy}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="empty" wx:else>暂无练习记录</view>
+</view>

@@ -1,5 +1,5 @@
 {
-  "description": "无人机方向感训练小程序",
+  "description": "学习飞行小程序",
   "packOptions": {
     "ignore": [],
     "include": []
@@ -32,7 +32,7 @@
   },
   "compileType": "miniprogram",
   "libVersion": "3.4.10",
-  "appid": "touristappid",
+  "appid": "wx4769ee7b7a4897d6",
   "projectname": "uav-study",
   "condition": {},
   "simulatorPluginLibVersion": {},

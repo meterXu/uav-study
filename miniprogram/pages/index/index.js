@@ -13,18 +13,24 @@ const S = {
   rightStickX: 0, rightStickY: 0,
   leftStickX: 0, leftStickY: 0,
   stickThreshold: 0.13,
+  roundStart: 0,
+  roundId: '',
+  paused: false,
+  // iconify SVG paths (24x24 coordinate space)
+  ICON_PAUSE: 'M13,10H14V14H13V10M10,10H11V14H10V10M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M9,16V8H11V16H9M13,16V8H15V16H13Z',
+  PLANE_PATH: 'M2,3L22,12L2,21V15L16,12L2,9V3Z',
 };
 
 Page({
   data: {
-    correct: 0,
-    total: 0,
     accuracy: '--%',
     isAdvanced: false,
     feedbackText: '',
+    hintText: '',
     feedbackClass: '',
     showAnswer: false,
     answerDir: '',
+    answerType: 'wrong',
     countdownWidth: 100,
     countdownAnimating: false,
     timeLimit: 3000,
@@ -33,6 +39,7 @@ Page({
   onLoad() {
     S.correct = 0;
     S.total = 0;
+    S.visitCount = 0;
     S.isAdvanced = false;
     S.answered = false;
     S.showAnswer = false;
@@ -42,9 +49,10 @@ Page({
     S.rightStickY = 0;
     S.leftStickX = 0;
     S.leftStickY = 0;
+    S.roundStart = Date.now();
+    S.roundId = Date.now() + '-' + Math.floor(Math.random() * 1000);
+    S.paused = false;
     this.setData({
-      correct: 0,
-      total: 0,
       accuracy: '--%',
       isAdvanced: false,
       feedbackText: '',
@@ -52,18 +60,21 @@ Page({
       showAnswer: false,
       countdownWidth: 100,
       countdownAnimating: false,
+      paused: false,
     });
   },
 
   onReady() {
     const query = wx.createSelectorQuery();
     query.select('#scene').fields({ node: true, size: true });
+    query.select('#scene').boundingClientRect();
     query.select('#tx').fields({ node: true, size: true });
     query.select('#tx').boundingClientRect();
     query.exec((res) => {
       const sceneRes = res[0];
-      const txRes = res[1];
-      const txRect = res[2];
+      const sceneRect = res[1];
+      const txRes = res[2];
+      const txRect = res[3];
       if (!sceneRes || !txRes) return;
 
       this.sceneCanvas = sceneRes.node;
@@ -71,6 +82,7 @@ Page({
       this.txCanvas = txRes.node;
       this.txCtx = txRes.node.getContext('2d');
       this.txRect = { left: txRect.left, top: txRect.top };
+      this.sceneRect = { left: sceneRect.left, top: sceneRect.top };
 
       let dpr = 2;
       try {
@@ -81,7 +93,7 @@ Page({
       this._sizeSceneCanvas(sceneRes.width, sceneRes.height);
       this._sizeTxCanvas(txRes.width, txRes.height);
 
-      this._loadImage();
+      this._initPaths();
       this.generateScene();
 
       this._resizeHandler = () => this.onResize();
@@ -91,6 +103,7 @@ Page({
 
   onUnload() {
     this._clearTimers();
+    this.saveRound();
     if (this._resizeHandler) {
       wx.offWindowResize(this._resizeHandler);
       this._resizeHandler = null;
@@ -98,12 +111,51 @@ Page({
   },
 
   _clearTimers() {
-    if (this._countdownTimer) clearTimeout(this._countdownTimer);
+    this._stopCountdown();
     if (this._feedbackTimer) clearTimeout(this._feedbackTimer);
     if (this._nextTimer) clearTimeout(this._nextTimer);
-    this._countdownTimer = null;
     this._feedbackTimer = null;
     this._nextTimer = null;
+  },
+
+  _stopCountdown() {
+    if (this._countdownTimer) {
+      clearTimeout(this._countdownTimer);
+      this._countdownTimer = null;
+    }
+    if (this._countdownTicker) {
+      clearInterval(this._countdownTicker);
+      this._countdownTicker = null;
+    }
+  },
+
+  _startCountdown(duration, full) {
+    this._stopCountdown();
+    const total = full || duration;
+    this._cdFull = total;
+    this._cdDeadline = Date.now() + duration;
+    this._countdownTicker = setInterval(() => {
+      const remain = Math.max(0, this._cdDeadline - Date.now());
+      const pct = (remain / total) * 100;
+      this.setData({ countdownWidth: pct });
+      if (remain <= 0 && this._countdownTicker) {
+        clearInterval(this._countdownTicker);
+        this._countdownTicker = null;
+      }
+    }, 50);
+    this._countdownTimer = setTimeout(() => this.onCountdownTimeout(), duration);
+  },
+
+  _pauseCountdown() {
+    if (!this._countdownTimer && !this._countdownTicker) return;
+    this._cdRemain = Math.max(0, this._cdDeadline - Date.now());
+    this._stopCountdown();
+  },
+
+  _resumeCountdown() {
+    if (S.isAdvanced && !S.answered && this._cdRemain > 0 && this._cdFull) {
+      this._startCountdown(this._cdRemain, this._cdFull);
+    }
   },
 
   _sizeSceneCanvas(width, height) {
@@ -127,17 +179,22 @@ Page({
     this.txH = height;
   },
 
-  _loadImage() {
-    this.planeLoaded = false;
-    this.planeImg = this.sceneCanvas.createImage();
-    this.planeImg.onload = () => {
-      this.planeLoaded = true;
-      this.renderScene();
-    };
-    this.planeImg.onerror = () => {
-      this.planeLoaded = false;
-    };
-    this.planeImg.src = '/images/paper-airplane.png';
+  _initPaths() {
+    // 预创建 iconify 图标的 Path2D 对象供 Canvas 直接绘制
+    this._planePath2D = new Path2D(S.PLANE_PATH);
+  },
+
+  _drawIconPath(ctx, path, cx, cy, size, color) {
+    // 复用 CanvasRenderingContext2D 的 Path2D 能力绘制 SVG path（iconify 图标为 24x24 坐标）
+    const p = new Path2D(path);
+    const scale = size / 24;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(scale, scale);
+    ctx.translate(-12, -12);
+    ctx.fillStyle = color;
+    ctx.fill(p);
+    ctx.restore();
   },
 
   renderScene() {
@@ -152,19 +209,19 @@ Page({
     const _dr = S.droneRadius * _r;
 
     ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = '#0a0f1a';
+    ctx.fillStyle = '#f0f4f8';
     ctx.fillRect(0, 0, w, h);
 
     ctx.beginPath();
     ctx.arc(_cx, _cy, _r, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(56,189,248,0.28)';
+    ctx.strokeStyle = 'rgba(148,163,184,0.3)';
     ctx.lineWidth = 2;
     ctx.stroke();
 
     const grad = ctx.createRadialGradient(_cx, _cy, 0, _cx, _cy, _r);
-    grad.addColorStop(0, 'rgba(14,165,233,0.14)');
-    grad.addColorStop(0.7, 'rgba(14,116,190,0.06)');
-    grad.addColorStop(1, 'rgba(2,6,23,0.22)');
+    grad.addColorStop(0, 'rgba(37,99,235,0.06)');
+    grad.addColorStop(0.7, 'rgba(37,99,235,0.055)');
+    grad.addColorStop(1, 'rgba(203,213,225,0.15)');
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.arc(_cx, _cy, _r, 0, Math.PI * 2);
@@ -174,14 +231,14 @@ Page({
       const rr = (i / 4) * _r;
       ctx.beginPath();
       ctx.arc(_cx, _cy, rr, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(148,163,184,0.05)';
+      ctx.strokeStyle = 'rgba(148,163,184,0.08)';
       ctx.lineWidth = 1;
       ctx.setLineDash([4, 6]);
       ctx.stroke();
       ctx.setLineDash([]);
     }
 
-    ctx.strokeStyle = 'rgba(56,189,248,0.10)';
+    ctx.strokeStyle = 'rgba(239,68,68,0.3)';
     ctx.lineWidth = 1;
     ctx.setLineDash([3, 5]);
     ctx.beginPath();
@@ -196,59 +253,81 @@ Page({
     ctx.beginPath();
     ctx.arc(_cx, _cy, _br, 0, Math.PI * 2);
     const bg = ctx.createRadialGradient(_cx - _br * 0.3, _cy - _br * 0.3, 0, _cx, _cy, _br);
-    bg.addColorStop(0, '#334155');
-    bg.addColorStop(0.4, '#1e293b');
-    bg.addColorStop(1, '#0f172a');
+    bg.addColorStop(0, '#fef2f2');
+    bg.addColorStop(0.4, '#fecaca');
+    bg.addColorStop(1, '#fca5a5');
     ctx.fillStyle = bg;
     ctx.fill();
-    ctx.strokeStyle = '#475569';
+    ctx.strokeStyle = '#ef4444';
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
     ctx.beginPath();
     ctx.arc(_cx, _cy, _br * 0.6, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(241,245,249,0.10)';
+    ctx.strokeStyle = 'rgba(239,68,68,0.3)';
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    // Drone - paper airplane icon
+    // Drone - paper airplane icon (iconify mdi-paper-plane)
     const dx = _cx + S.droneX * _r;
     const dy = _cy + S.droneY * _r;
     const hd = S.droneHeading;
-    if (this.planeLoaded) {
-      ctx.save();
-      ctx.translate(dx, dy);
-      ctx.rotate(hd);
-      const wImg = _dr * 3.4;
-      const hImg = wImg * (this.planeImg.height / this.planeImg.width);
-      ctx.shadowColor = 'rgba(56,189,248,0.4)';
-      ctx.shadowBlur = 14;
-      ctx.drawImage(this.planeImg, -wImg / 2, -hImg / 2, wImg, hImg);
-      ctx.restore();
-    } else {
-      ctx.beginPath();
-      ctx.arc(dx, dy, _dr * 1.2, 0, Math.PI * 2);
-      ctx.fillStyle = '#38bdf8';
-      ctx.fill();
-    }
+    ctx.save();
+    ctx.translate(dx, dy);
+    ctx.rotate(hd);
+    ctx.shadowColor = 'rgba(249,115,22,0.45)';
+    ctx.shadowBlur = 16;
+    this._drawIconPath(ctx, S.PLANE_PATH, 0, 0, _dr * 2.6, '#ea580c');
+    ctx.restore();
 
     const tbx = _cx - dx;
     const tby = _cy - dy;
     const tbd = Math.sqrt(tbx * tbx + tby * tby);
 
     const pct = Math.round((tbd / _r) * 100);
-    ctx.fillStyle = 'rgba(148,163,184,0.55)';
-    ctx.font = '8px sans-serif';
+    ctx.fillStyle = 'rgba(148,163,184,0.7)';
+    ctx.font = 'bold 11px -apple-system, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.fillText(pct + '% 偏离', _cx, _cy + _r + 6);
+    ctx.fillText(pct + '% 偏离', _cx, _cy + _r + 10);
+
+    // Direction labels
+    ctx.fillStyle = 'rgba(148,163,184,0.4)';
+    ctx.font = 'bold 10px -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('N', _cx, _cy - _r + 12);
+    ctx.fillText('S', _cx, _cy + _r - 12);
+    ctx.fillText('W', _cx - _r + 12, _cy);
+    ctx.fillText('E', _cx + _r - 12, _cy);
 
     if (S.showAnswer) {
       const tbmag = Math.sqrt(tbx * tbx + tby * tby) || 1;
       const ux = tbx / tbmag;
       const uy = tby / tbmag;
       const alen = _dr * 8;
-      this.drawArrow(ctx, dx, dy, dx + ux * alen, dy + uy * alen, 'rgba(74,222,128,0.95)');
+      this.drawArrow(ctx, dx, dy, dx + ux * alen, dy + uy * alen, 'rgba(22,163,74,0.95)');
+    }
+
+    // 暂停态遮罩
+    if (S.paused) {
+      ctx.fillStyle = 'rgba(15,23,42,0.28)';
+      ctx.beginPath();
+      ctx.arc(_cx, _cy, _r, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 暂停图标（iconify mdi pause-circle-outline）
+      this._drawIconPath(ctx, S.ICON_PAUSE, _cx, _cy - 18, _r * 0.34, '#ffffff');
+
+      ctx.fillStyle = '#1e293b';
+      ctx.font = 'bold 20px -apple-system, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('已暂停', _cx, _cy + 22);
+
+      ctx.fillStyle = 'rgba(148,163,184,0.9)';
+      ctx.font = '12px -apple-system, sans-serif';
+      ctx.fillText('点击圆圈继续', _cx, _cy + 46);
     }
   },
 
@@ -260,13 +339,13 @@ Page({
     ctx.clearRect(0, 0, w, h);
 
     const bg = ctx.createLinearGradient(0, 0, 0, h);
-    bg.addColorStop(0, '#111827');
-    bg.addColorStop(0.5, '#0f172a');
-    bg.addColorStop(1, '#0a0f1a');
+    bg.addColorStop(0, '#fef2f2');
+    bg.addColorStop(0.5, '#fdfdfd');
+    bg.addColorStop(1, '#f8fafc');
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, w, h);
 
-    const px = w * 0.04;
+    const px = w * 0.03;
     const py = h * 0.04;
     const bw = w - px * 2;
     const bh = h - py * 2;
@@ -284,40 +363,33 @@ Page({
     ctx.quadraticCurveTo(px, py, px + rr, py);
     ctx.closePath();
     const bf = ctx.createLinearGradient(0, py, 0, py + bh);
-    bf.addColorStop(0, '#1e293b');
-    bf.addColorStop(0.3, '#16202f');
-    bf.addColorStop(0.7, '#0f172a');
-    bf.addColorStop(1, '#0b1220');
+    bf.addColorStop(0, '#ffffff');
+    bf.addColorStop(0.3, '#f8fafc');
+    bf.addColorStop(0.7, '#f1f5f9');
+    bf.addColorStop(1, '#f0f4f8');
     ctx.fillStyle = bf;
     ctx.fill();
-    ctx.strokeStyle = 'rgba(148,163,184,0.12)';
+    ctx.strokeStyle = 'rgba(203,213,225,0.6)';
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    const marginX = w * 0.15;
-    const marginY = h * 0.12;
-    const gR = Math.min(w * 0.12, h * 0.18);
-    const lcx = marginX + gR + w * 0.04;
-    const lcy = marginY + gR + h * 0.04;
-    const rcx = w - marginX - gR - w * 0.04;
+    const marginX = w * 0.08;
+    const marginY = h * 0.09;
+    const gR = Math.min(w * 0.18, h * 0.34);
+    const lcx = marginX + gR + w * 0.03;
+    const lcy = h * 0.50;
+    const rcx = w - marginX - gR - w * 0.03;
     const rcy = lcy;
 
-    ctx.fillStyle = 'rgba(148,163,184,0.55)';
-    ctx.font = '9px sans-serif';
+    ctx.fillStyle = 'rgba(100,116,139,0.65)';
+    ctx.font = 'bold 12px -apple-system, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('左摇杆', lcx, marginY - 8);
-    ctx.fillStyle = 'rgba(100,116,139,0.4)';
-    ctx.font = '7px sans-serif';
-    ctx.fillText('油门', lcx, marginY + gR * 2 + 18);
-    ctx.fillText('偏航', lcx, marginY + gR * 2 + 30);
+    ctx.fillText('左摇杆', lcx, marginY + 4);
 
-    ctx.fillStyle = 'rgba(245,158,11,0.7)';
-    ctx.font = '9px sans-serif';
-    ctx.fillText('右摇杆', rcx, marginY - 8);
-    ctx.fillStyle = 'rgba(100,116,139,0.4)';
-    ctx.font = '7px sans-serif';
-    ctx.fillText('俯仰/横滚', rcx, marginY + gR * 2 + 18);
+    ctx.fillStyle = 'rgba(37,99,235,0.8)';
+    ctx.font = 'bold 12px -apple-system, sans-serif';
+    ctx.fillText('右摇杆', rcx, marginY + 4);
 
     this.drawGimbal(ctx, lcx, lcy, gR, S.leftStickX, S.leftStickY, false);
     this.drawGimbal(ctx, rcx, rcy, gR, S.rightStickX, S.rightStickY, true);
@@ -326,7 +398,7 @@ Page({
       const gcx = rcx;
       const gcy = rcy;
       const arad = gR * 1.25;
-      this.drawArrow(ctx, gcx, gcy, gcx + S.correctSX * arad, gcy + S.correctSY * arad, 'rgba(74,222,128,0.95)');
+      this.drawArrow(ctx, gcx, gcy, gcx + S.correctSX * arad, gcy + S.correctSY * arad, 'rgba(22,163,74,0.95)');
     }
   },
 
@@ -335,57 +407,53 @@ Page({
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     const g = ctx.createRadialGradient(cx - r * 0.2, cy - r * 0.2, 0, cx, cy, r);
-    g.addColorStop(0, highlight ? 'rgba(14,165,233,0.28)' : 'rgba(30,41,59,0.3)');
-    g.addColorStop(0.7, highlight ? 'rgba(14,116,190,0.16)' : 'rgba(15,23,42,0.2)');
-    g.addColorStop(1, 'rgba(10,15,26,0.3)');
+    g.addColorStop(0, highlight ? 'rgba(37,99,235,0.15)' : 'rgba(226,232,240,0.6)');
+    g.addColorStop(0.7, highlight ? 'rgba(37,99,235,0.08)' : 'rgba(248,250,252,0.4)');
+    g.addColorStop(1, 'rgba(203,213,225,0.3)');
     ctx.fillStyle = g;
     ctx.fill();
-    ctx.strokeStyle = highlight ? 'rgba(56,189,248,0.4)' : 'rgba(71,85,105,0.2)';
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = highlight ? 'rgba(37,99,235,0.35)' : 'rgba(203,213,225,0.7)';
+    ctx.lineWidth = 2;
     ctx.stroke();
 
     const ir = r * 0.7;
     ctx.beginPath();
     ctx.arc(cx, cy, ir, 0, Math.PI * 2);
-    ctx.strokeStyle = highlight ? 'rgba(56,189,248,0.14)' : 'rgba(71,85,105,0.12)';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = highlight ? 'rgba(37,99,235,0.15)' : 'rgba(226,232,240,0.5)';
+    ctx.lineWidth = 1.5;
     ctx.stroke();
 
     const kx = cx + sx * ir;
     const ky = cy + sy * ir;
-    const kr = r * 0.25;
+    const kr = r * 0.34;
 
     ctx.beginPath();
-    ctx.arc(kx + 1.5, ky + 2, kr, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.arc(kx + 2, ky + 2.5, kr, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.08)';
     ctx.fill();
 
     ctx.beginPath();
     ctx.arc(kx, ky, kr, 0, Math.PI * 2);
     const kg = ctx.createRadialGradient(kx - kr * 0.3, ky - kr * 0.3, 0, kx, ky, kr);
-    kg.addColorStop(0, highlight ? '#7dd3fc' : '#94a3b8');
-    kg.addColorStop(0.5, highlight ? '#0ea5e9' : '#475569');
-    kg.addColorStop(1, highlight ? '#0369a1' : '#1e293b');
+    kg.addColorStop(0, highlight ? '#93c5fd' : '#ffffff');
+    kg.addColorStop(0.5, highlight ? '#3b82f6' : '#cbd5e1');
+    kg.addColorStop(1, highlight ? '#1d4ed8' : '#94a3b8');
     ctx.fillStyle = kg;
     ctx.fill();
-    ctx.strokeStyle = highlight ? 'rgba(125,211,252,0.5)' : 'rgba(148,163,184,0.2)';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = highlight ? 'rgba(59,130,246,0.6)' : 'rgba(203,213,225,0.6)';
+    ctx.lineWidth = 1.5;
     ctx.stroke();
 
     ctx.beginPath();
     ctx.arc(kx - kr * 0.2, ky - kr * 0.2, kr * 0.15, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
     ctx.fill();
 
     if (highlight) {
-      ctx.fillStyle = 'rgba(56,189,248,0.35)';
-      ctx.font = '7px sans-serif';
+      ctx.fillStyle = 'rgba(37,99,235,0.6)';
+      ctx.font = 'bold 10px -apple-system, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('↑', cx, cy - r - 5);
-      ctx.fillText('↓', cx, cy + r + 5);
-      ctx.fillText('←', cx - r - 5, cy);
-      ctx.fillText('→', cx + r + 5, cy);
     }
   },
 
@@ -410,12 +478,12 @@ Page({
   getGimbalCenters() {
     const w = this.txW;
     const h = this.txH;
-    const marginX = w * 0.15;
-    const marginY = h * 0.12;
-    const gR = Math.min(w * 0.12, h * 0.18);
-    const lcx = marginX + gR + w * 0.04;
-    const lcy = marginY + gR + h * 0.04;
-    const rcx = w - marginX - gR - w * 0.04;
+    const marginX = w * 0.08;
+    const marginY = h * 0.09;
+    const gR = Math.min(w * 0.18, h * 0.34);
+    const lcx = marginX + gR + w * 0.03;
+    const lcy = h * 0.50;
+    const rcx = w - marginX - gR - w * 0.03;
     return { lcx, lcy, rcx, rcy: lcy, gR };
   },
 
@@ -506,14 +574,39 @@ Page({
     this.releaseStick();
   },
 
-  evaluateAnswer(stickX, stickY) {
+  onSceneTouch(e) {
+    const t = e.touches && e.touches[0];
+    if (!t) return;
+    let mx = t.x;
+    let my = t.y;
+    if (mx === undefined || my === undefined) {
+      const rect = this.sceneRect || { left: 0, top: 0 };
+      mx = t.clientX - rect.left;
+      my = t.clientY - rect.top;
+    }
+    if (this.cx == null || this.cr == null) return;
+    const dist = Math.sqrt((mx - this.cx) * (mx - this.cx) + (my - this.cy) * (my - this.cy));
+    if (dist > this.cr) return;
+    this.togglePause();
+  },
+
+  togglePause() {
     if (S.answered) return;
+    S.paused = !S.paused;
+    if (S.paused) {
+      this._pauseCountdown();
+    } else {
+      this._resumeCountdown();
+    }
+    this.setData({ paused: S.paused });
+    this.renderScene();
+  },
+
+  evaluateAnswer(stickX, stickY) {
+    if (S.answered || S.paused) return;
     S.answered = true;
     S.total++;
-    if (this._countdownTimer) {
-      clearTimeout(this._countdownTimer);
-      this._countdownTimer = null;
-    }
+    this._stopCountdown();
     this.setData({ countdownAnimating: false });
 
     const stickMag = Math.sqrt(stickX * stickX + stickY * stickY);
@@ -534,12 +627,13 @@ Page({
 
     if (match) S.correct++;
     this.updateUI();
+    this.saveRound();
     if (match) {
       this._showFeedback(true);
-      this._nextTimer = setTimeout(() => this.generateScene(), 600);
+      this._nextTimer = setTimeout(() => this.generateScene(), 1500);
     } else {
       this._showFeedback(false);
-      this.showAnswerSolution();
+      this.showAnswerSolution('wrong');
     }
   },
 
@@ -551,7 +645,7 @@ Page({
     if (this._feedbackTimer) clearTimeout(this._feedbackTimer);
     this._feedbackTimer = setTimeout(() => {
       this.setData({ feedbackText: '', feedbackClass: '' });
-    }, 600);
+    }, 1200);
   },
 
   computeCorrectAnswer() {
@@ -575,11 +669,11 @@ Page({
     return v + hz || '正中';
   },
 
-  showAnswerSolution() {
+  showAnswerSolution(type) {
     S.showAnswer = true;
     this.computeCorrectAnswer();
     const dir = this.stickDirText(S.correctSX, S.correctSY);
-    this.setData({ showAnswer: true, answerDir: dir });
+    this.setData({ showAnswer: true, answerDir: dir, answerType: type || 'wrong' });
     this.renderScene();
     this.renderTx();
   },
@@ -593,10 +687,65 @@ Page({
   updateUI() {
     const pct = S.total > 0 ? Math.round((S.correct / S.total) * 100) : 0;
     this.setData({
-      correct: S.correct,
-      total: S.total,
       accuracy: S.total > 0 ? pct + '%' : '--%',
     });
+  },
+
+  newPractice() {
+    // 结束当前轮并入库存档，再开启新一轮
+    this.saveRound();
+    this.startRound();
+    this._clearTimers();
+    this.generateScene();
+  },
+
+  showStats() {
+    wx.navigateTo({ url: '/pages/stats/stats' });
+  },
+
+  startRound() {
+    S.correct = 0;
+    S.total = 0;
+    S.roundStart = Date.now();
+    S.roundId = Date.now() + '-' + Math.floor(Math.random() * 1000);
+    S.paused = false;
+    this.setData({ accuracy: '--%', paused: false });
+  },
+
+  saveRound() {
+    if (S.total <= 0) return;
+    const correct = S.correct;
+    const total = S.total;
+    const accuracy = Math.round((correct / total) * 100) + '%';
+    const durationSec = Math.max(0, Math.round((Date.now() - S.roundStart) / 1000));
+    const round = {
+      id: S.roundId,
+      mode: S.isAdvanced ? '挑战模式' : '自由练习',
+      total,
+      correct,
+      accuracy,
+      time: this._formatTime(new Date(S.roundStart)),
+      durationSec,
+    };
+    let rounds = [];
+    try {
+      rounds = wx.getStorageSync('practiceRounds') || [];
+      if (!Array.isArray(rounds)) rounds = [];
+    } catch (e) {}
+    const idx = rounds.findIndex((r) => r.id === round.id);
+    if (idx >= 0) {
+      rounds[idx] = round;
+    } else {
+      rounds.unshift(round);
+    }
+    if (rounds.length > 500) rounds = rounds.slice(0, 500);
+    wx.setStorageSync('practiceRounds', rounds);
+  },
+
+  _formatTime(d) {
+    const p = (n) => (n < 10 ? '0' + n : '' + n);
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+      ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
   },
 
   generateScene() {
@@ -612,38 +761,42 @@ Page({
     S.leftStickX = 0;
     S.leftStickY = 0;
     S.showAnswer = false;
+    S.visitCount = (S.visitCount || 0) + 1;
     this.activeStick = null;
     this.mouseDown = false;
 
-    this.setData({ feedbackText: '', feedbackClass: '', showAnswer: false });
+    this.setData({ feedbackText: '', feedbackClass: '', showAnswer: false, hintText: '' });
     this.restartCountdown();
     this.renderScene();
     this.renderTx();
+
+    // Show hint on first load
+    if (!S.visitCount) {
+      setTimeout(() => {
+        this.setData({ hintText: '拖动摇杆控制无人机回中' });
+      }, 600);
+    }
   },
 
   restartCountdown() {
-    if (this._countdownTimer) {
-      clearTimeout(this._countdownTimer);
-      this._countdownTimer = null;
-    }
+    this._stopCountdown();
+    this._cdRemain = 0;
     this.setData({ countdownWidth: 100, countdownAnimating: false });
-    if (S.isAdvanced && !S.answered) {
-      setTimeout(() => {
-        this.setData({ countdownAnimating: true, countdownWidth: 0 });
-      }, 30);
-      this._countdownTimer = setTimeout(() => this.onCountdownTimeout(), S.timeLimit);
-    }
+    if (!S.isAdvanced || S.answered) return;
+    this._startCountdown(S.timeLimit, S.timeLimit);
   },
 
   onCountdownTimeout() {
     if (S.answered) return;
     S.answered = true;
     S.total++;
+    this._stopCountdown();
     S.correctSX = 0;
     S.correctSY = 0;
     this._showFeedback(false);
     this.updateUI();
-    this.showAnswerSolution();
+    this.saveRound();
+    this.showAnswerSolution('timeout');
   },
 
   setFree() {
@@ -655,15 +808,16 @@ Page({
   },
 
   setMode(advanced) {
+    if (S.isAdvanced === advanced) return;
+    // 切换模式视为开启新的一轮：先归档旧轮
+    this.saveRound();
     S.isAdvanced = advanced;
+    this.startRound();
     this.setData({ isAdvanced: advanced });
-    if (advanced && !S.answered) {
+    if (advanced) {
       this.restartCountdown();
-    } else if (!advanced) {
-      if (this._countdownTimer) {
-        clearTimeout(this._countdownTimer);
-        this._countdownTimer = null;
-      }
+    } else {
+      this._stopCountdown();
       this.setData({ countdownAnimating: false, countdownWidth: 100 });
     }
   },
@@ -671,13 +825,15 @@ Page({
   onResize() {
     const query = wx.createSelectorQuery();
     query.select('#scene').fields({ node: true, size: true });
+    query.select('#scene').boundingClientRect();
     query.select('#tx').fields({ node: true, size: true });
     query.select('#tx').boundingClientRect();
     query.exec((res) => {
-      if (!res[0] || !res[1]) return;
-      this.txRect = { left: res[2].left, top: res[2].top };
+      if (!res[0] || !res[2]) return;
+      this.txRect = { left: res[3].left, top: res[3].top };
+      this.sceneRect = { left: res[1].left, top: res[1].top };
       this._sizeSceneCanvas(res[0].width, res[0].height);
-      this._sizeTxCanvas(res[1].width, res[1].height);
+      this._sizeTxCanvas(res[2].width, res[2].height);
       this.renderScene();
       this.renderTx();
     });
