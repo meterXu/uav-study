@@ -16,9 +16,10 @@ const S = {
   roundStart: 0,
   roundId: '',
   paused: false,
-  // iconify SVG paths (24x24 coordinate space)
-  ICON_PAUSE: 'M13,10H14V14H13V10M10,10H11V14H10V10M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M9,16V8H11V16H9M13,16V8H15V16H13Z',
-  PLANE_PATH: 'M2,3L22,12L2,21V15L16,12L2,9V3Z',
+  // SVG path data from images/icons/pause-circle.svg and paper-airplane.svg
+  ICON_PAUSE: 'M13 16V8h2v8zm-4 0V8h2v8zm3-14a10 10 0 0 1 10 10a10 10 0 0 1-10 10A10 10 0 0 1 2 12A10 10 0 0 1 12 2m0 2a8 8 0 0 0-8 8a8 8 0 0 0 8 8a8 8 0 0 0 8-8a8 8 0 0 0-8-8',
+  PLANE_PATH: 'M.7 3.102a1 1 0 0 1 1.34-1.236L14.33 7.08c.812.344.812 1.496 0 1.84L2.04 14.134c-.793.336-1.611-.42-1.34-1.236l1.085-3.253a1 1 0 0 1 .893-.683l7.823-.434a.528.528 0 0 0 0-1.056l-7.823-.434a1 1 0 0 1-.893-.682z',
+  PLANE_VIEWBOX: 16,
 };
 
 Page({
@@ -180,18 +181,36 @@ Page({
   },
 
   _initPaths() {
-    // 预创建 iconify 图标的 Path2D 对象供 Canvas 直接绘制
-    this._planePath2D = new Path2D(S.PLANE_PATH);
+    this._planeImage = this.sceneCanvas.createImage();
+    this._planeImage.onload = () => {
+      this._planeImageReady = true;
+      this.renderScene();
+    };
+    this._planeImage.onerror = () => {
+      this._planeImageReady = false;
+      this.renderScene();
+    };
+    this._planeImage.src = '/images/icons/paper-airplane.svg';
+
+    this._pauseImage = this.sceneCanvas.createImage();
+    this._pauseImage.onload = () => {
+      this._pauseImageReady = true;
+      this.renderScene();
+    };
+    this._pauseImage.onerror = () => {
+      this._pauseImageReady = false;
+      this.renderScene();
+    };
+    this._pauseImage.src = '/images/icons/pause-circle.svg';
   },
 
-  _drawIconPath(ctx, path, cx, cy, size, color) {
-    // 复用 CanvasRenderingContext2D 的 Path2D 能力绘制 SVG path（iconify 图标为 24x24 坐标）
+  _drawIconPath(ctx, path, cx, cy, size, color, viewBox = 24) {
     const p = new Path2D(path);
-    const scale = size / 24;
+    const scale = size / viewBox;
     ctx.save();
     ctx.translate(cx, cy);
     ctx.scale(scale, scale);
-    ctx.translate(-12, -12);
+    ctx.translate(-viewBox / 2, -viewBox / 2);
     ctx.fillStyle = color;
     ctx.fill(p);
     ctx.restore();
@@ -277,7 +296,19 @@ Page({
     ctx.rotate(hd);
     ctx.shadowColor = 'rgba(249,115,22,0.45)';
     ctx.shadowBlur = 16;
-    this._drawIconPath(ctx, S.PLANE_PATH, 0, 0, _dr * 2.6, '#ea580c');
+    if (this._planeImageReady) {
+      const planeSize = _dr * 2.6;
+      ctx.drawImage(this._planeImage, -planeSize / 2, -planeSize / 2, planeSize, planeSize);
+    } else {
+      ctx.fillStyle = '#ea580c';
+      ctx.beginPath();
+      ctx.moveTo(-_dr * 1.3, -_dr * 1.3);
+      ctx.lineTo(_dr * 1.3, 0);
+      ctx.lineTo(-_dr * 1.3, _dr * 1.3);
+      ctx.lineTo(-_dr * 0.4, 0);
+      ctx.closePath();
+      ctx.fill();
+    }
     ctx.restore();
 
     const tbx = _cx - dx;
@@ -316,18 +347,20 @@ Page({
       ctx.arc(_cx, _cy, _r, 0, Math.PI * 2);
       ctx.fill();
 
-      // 暂停图标（iconify mdi pause-circle-outline）
-      this._drawIconPath(ctx, S.ICON_PAUSE, _cx, _cy - 18, _r * 0.34, '#ffffff');
+      // 暂停图标（pause-circle.svg）
+      const pauseSize = _r * 0.34;
+      const pauseIconY = _cy;
+      if (this._pauseImageReady) {
+        ctx.drawImage(this._pauseImage, _cx - pauseSize / 2, pauseIconY - pauseSize / 2, pauseSize, pauseSize);
+      } else {
+        this._drawIconPath(ctx, S.ICON_PAUSE, _cx, pauseIconY, pauseSize, '#2563eb');
+      }
 
       ctx.fillStyle = '#1e293b';
       ctx.font = 'bold 20px -apple-system, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('已暂停', _cx, _cy + 22);
-
-      ctx.fillStyle = 'rgba(148,163,184,0.9)';
-      ctx.font = '12px -apple-system, sans-serif';
-      ctx.fillText('点击圆圈继续', _cx, _cy + 46);
+      ctx.fillText('已暂停', _cx, _cy + pauseSize / 2 + 18);
     }
   },
 
