@@ -347,20 +347,12 @@ Page({
       ctx.arc(_cx, _cy, _r, 0, Math.PI * 2);
       ctx.fill();
 
-      // 暂停图标（pause-circle.svg）
-      const pauseSize = _r * 0.34;
-      const pauseIconY = _cy;
-      if (this._pauseImageReady) {
-        ctx.drawImage(this._pauseImage, _cx - pauseSize / 2, pauseIconY - pauseSize / 2, pauseSize, pauseSize);
-      } else {
-        this._drawIconPath(ctx, S.ICON_PAUSE, _cx, pauseIconY, pauseSize, '#2563eb');
-      }
-
+      // 暂停图标由 WXML 覆盖层渲染，兼容预览环境
       ctx.fillStyle = '#1e293b';
       ctx.font = 'bold 20px -apple-system, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('已暂停', _cx, _cy + pauseSize / 2 + 18);
+      ctx.fillText('已暂停', _cx, _cy + _r * 0.17 + 18);
     }
   },
 

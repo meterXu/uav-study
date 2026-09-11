@@ -24,6 +24,7 @@
 
   <view class="canvas-wrap">
     <canvas type="2d" id="scene" class="scene-canvas" bindtouchstart="onSceneTouch"></canvas>
+    <image wx:if="{{paused}}" class="pause-icon" src="/images/icons/pause-circle.svg" mode="aspectFit" />
     <view class="feedback {{feedbackClass}}" wx:if="{{feedbackText}}">{{feedbackText}}</view>
     <view class="hint-text" wx:if="{{hintText}}">{{hintText}}</view>
   </view>
